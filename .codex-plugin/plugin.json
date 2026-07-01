@@ -1,0 +1,36 @@
+{
+  "name": "codex-claude-fable-plugin",
+  "version": "0.1.0",
+  "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
+  "author": {
+    "name": "Jacqueline Oliver"
+  },
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "claude",
+    "fable",
+    "claude-code"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Claude Fable",
+    "shortDescription": "Call Claude Code Fable from Codex chat.",
+    "longDescription": "Claude Fable lets Codex act as a lightweight chat shell and route selected turns to the local Claude Code CLI with configurable effort.",
+    "developerName": "Jacqueline Oliver",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "$fable effort=high brainstorm this architecture",
+      "$fable --effort max review this plan",
+      "$fable-config show"
+    ],
+    "brandColor": "#111111",
+    "screenshots": []
+  }
+}
+

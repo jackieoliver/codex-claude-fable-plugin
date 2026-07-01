@@ -1,0 +1,21 @@
+# Local agent/tool state (never publish)
+.claude/
+.fable/
+.codex/
+
+# Environment files and credentials
+.env*
+
+# Dependencies
+node_modules/
+
+# Logs and local output
+logs/
+*.log
+npm-debug.log*
+
+# Local overrides
+*.local.*
+
+# OS artifacts
+.DS_Store

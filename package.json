@@ -1,0 +1,15 @@
+{
+  "name": "codex-claude-fable-plugin",
+  "version": "0.1.0",
+  "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "codex-fable": "./scripts/fable-call.mjs"
+  },
+  "scripts": {
+    "smoke": "node scripts/fable-call.mjs --dry-run --effort high -- \"hello\"",
+    "config": "node scripts/fable-call.mjs --show-config"
+  }
+}
+
