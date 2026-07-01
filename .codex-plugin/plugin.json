@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
   "author": {
-    "name": "Jacqueline Oliver"
+    "name": "pizzacorruption"
   },
   "license": "MIT",
   "keywords": [
@@ -17,7 +17,7 @@
     "displayName": "Claude Fable",
     "shortDescription": "Call Claude Code Fable from Codex chat.",
     "longDescription": "Claude Fable lets Codex act as a lightweight chat shell and route selected turns to the local Claude Code CLI with configurable effort.",
-    "developerName": "Jacqueline Oliver",
+    "developerName": "pizzacorruption",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive",
@@ -33,4 +33,3 @@
     "screenshots": []
   }
 }
-
