@@ -224,6 +224,8 @@ function routerInstruction(prompt) {
     "Reply with EXACTLY one word on one line: MODEL",
     "Default to fable. Only choose a smaller model when the prompt is obviously suited to it.",
     "If there is any ambiguity, uncertainty, hidden complexity, or open-ended reasoning, choose fable.",
+    "If the prompt asks about the assistant itself (its model, identity, version, capabilities,",
+    "or configuration), always choose fable — the answer depends on which model answers.",
     "MODEL choices: haiku = trivial lookups, quick facts, tiny snippets;",
     "sonnet = clearly routine coding and writing questions, summaries;",
     "opus = bounded complex debugging, careful analysis, code review;",
@@ -404,6 +406,10 @@ async function commandAsk(paths, parsed) {
     );
     return;
   }
+
+  // Attribution header on STDOUT so it survives any relay: the reader always
+  // knows which Claude answered, and that routing happened (issue #2).
+  process.stdout.write(`[Claude · ${model.value} · ${effort.value}]\n`);
 
   let usedSessionId = sessionId;
   let result = await runClaudeOnce(claudeArgs, paths.cwd);
