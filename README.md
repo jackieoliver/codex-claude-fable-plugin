@@ -30,6 +30,31 @@ codex plugin marketplace add "$(pwd)"
 Open Codex, run `/plugins`, install **Claude for Codex**, and start a new thread.
 Type `/claude` to invoke the skill from the slash command menu.
 
+### Staying up to date
+
+- **Developing from this checkout:** wrapper code is live immediately (the
+  `codex-claude` binary is npm-linked to the working tree). Only `skills/` and
+  the plugin manifest are snapshotted by Codex — refresh with `npm run refresh`,
+  or make it automatic on commits that touch them:
+
+```bash
+cat > .git/hooks/post-commit << 'EOF'
+#!/bin/sh
+if git diff HEAD~1 --name-only 2>/dev/null | grep -qE '^(skills/|\.codex-plugin/|\.agents/)'; then
+  sh "$(git rev-parse --show-toplevel)/scripts/refresh-plugin.sh" || true
+fi
+EOF
+chmod +x .git/hooks/post-commit
+```
+
+- **Installing on another machine from GitHub:** add the repo URL as a git
+  marketplace instead, then pull updates with one command:
+
+```bash
+codex plugin marketplace add https://github.com/jackieoliver/codex-claude-fable-plugin.git
+codex plugin marketplace upgrade    # refresh to latest from GitHub
+```
+
 ## Usage
 
 ```text
@@ -67,8 +92,10 @@ With no model word, a fast haiku call reads your prompt, keeps `fable` as the
 default, and chooses a smaller model only when that is obvious from the prompt.
 Trivial lookups may land on `haiku`, clearly routine work may land on `sonnet`,
 and bounded careful analysis may land on `opus`; ambiguous, open-ended,
-architectural, or hard reasoning stays on `fable`. Effort resolves separately
-from your call, environment, saved config, or the built-in `xhigh` default. The
+architectural, or hard reasoning stays on `fable`. When you haven't named an
+effort anywhere, the routed model brings a matching one (`haiku → low`,
+`sonnet → high`, `opus`/`fable → xhigh`); an effort you name, set in env, or
+pin in config always wins. The
 decision is echoed as `[claude] auto-router → <model> <effort>` so it's never a
 mystery. If routing fails, the call falls back to `fable xhigh`. Naming a model
 skips the router entirely.
@@ -77,8 +104,12 @@ skips the router entirely.
 
 Conversations persist per project: consecutive Claude-mode calls continue one
 Claude session (model switches keep the thread). Say `new` to start over.
-Session state lives in `.codex-claude/state.json` (gitignored); no ids to
-manage.
+Session state and run logs live **outside your repo** in
+`~/.codex-claude/projects/<project>-<hash>/`, so prompts and session ids can
+never be committed by accident; no ids to manage. (State from older versions
+in `<repo>/.codex-claude/` migrates automatically on first call.) If a resumed
+conversation gets old (>7 days) or long (>50 calls), the wrapper prints a
+heads-up suggesting `new`.
 
 ## Repo access
 
@@ -107,8 +138,9 @@ Resolution order for model and effort:
 
 ## Troubleshooting
 
-- Every call writes a log to `.codex-claude/runs/` with the prompt, output, and
-  exit code.
+- Every call writes a log to `~/.codex-claude/projects/<project>-<hash>/runs/`
+  with the prompt, output, and exit code (`/claude config` shows the exact
+  `stateDir`).
 - Dry-run any call to see the exact `claude` command without running it:
 
 ```bash

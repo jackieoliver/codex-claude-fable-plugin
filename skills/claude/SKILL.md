@@ -60,8 +60,9 @@ Efforts: `low`, `medium`, `high`, `xhigh`, `max`.
 With no model word, a fast haiku router reads the prompt, keeps `fable` as the
 default, and chooses a smaller model only when the prompt is obviously suited
 to one. If the prompt is ambiguous, open-ended, architectural, or asks for hard
-reasoning, it stays on `fable`. Effort resolves independently from a named
-effort, env/config, or the built-in `xhigh` default. The chosen route is echoed
+reasoning, it stays on `fable`. When no effort was named anywhere, the routed
+model brings a matching one (`haiku → low`, `sonnet → high`, `opus`/`fable →
+`xhigh`); a named/env/config effort always wins. The chosen route is echoed
 on stderr as `[claude] auto-router → <model> <effort>`. Naming a model skips
 the router entirely; naming an effort keeps that effort for the call. `use
 <model>` pins one persistently; `use auto` re-enables routing.

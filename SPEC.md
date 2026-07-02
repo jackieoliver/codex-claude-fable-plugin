@@ -170,3 +170,24 @@ compat-endpoint fidelity with Codex's agentic tool loop is unproven until tested
 - **Claude mode is sticky by intent.** `/claude` turns on project-local
   `stickyMode`; `/claude stop`, `/claude off`, or `/claude codex` turns it off.
   The skill instructs Codex to keep using Claude between those points.
+
+## Amendments (v0.4)
+
+- **State moved out of the repo.** Config, session state, and run logs now live
+  in `~/.codex-claude/projects/<name>-<pathhash>/` (override root with
+  `CODEX_CLAUDE_HOME`). Rationale: run logs contain full prompts/outputs and
+  previously sat in whatever repo the call ran from — one `git add -A` away
+  from a public leak. Legacy `<cwd>/.codex-claude/` state migrates
+  automatically once.
+- **Routed effort pairing.** When the router picks the model and no effort was
+  named anywhere, the routed model brings its effort (haiku→low, sonnet→high,
+  opus/fable→xhigh). Named/env/config effort always wins.
+- **Session hygiene.** State tracks `callCount`; resumed conversations older
+  than 7 days or past 50 calls print a heads-up suggesting `new` (warn-only —
+  never auto-forget).
+- **Attribution header** now includes a `safe-mode` marker; unknown-flag
+  failures from the Claude CLI produce a friendly version-drift hint.
+- **Auto-refresh.** `npm run refresh` re-snapshots the plugin cache; a
+  post-commit hook (documented in README) runs it automatically when skills/
+  or manifests change. Other machines: git-source marketplace +
+  `codex plugin marketplace upgrade`.

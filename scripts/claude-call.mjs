@@ -4,8 +4,9 @@
 // spawn of the local `claude` CLI. Zero dependencies.
 
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import path from "node:path";
 
 const MODEL_ALIASES = ["auto", "fable", "opus", "sonnet", "haiku"];
@@ -15,8 +16,13 @@ const MODIFIERS = new Set(["new", "repo"]);
 const SUBCOMMANDS = new Set(["models", "use", "config", "on", "start", "stop", "off", "codex"]);
 const BUILT_IN_DEFAULTS = { model: "auto", effort: "xhigh" };
 const ROUTER_FALLBACK = { model: "fable", effort: "xhigh" };
+// When the router picked the model AND the user named no effort anywhere,
+// the routed model brings a matching effort (a named effort always wins).
+const ROUTED_EFFORT = { haiku: "low", sonnet: "high", opus: "xhigh", fable: "xhigh" };
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 const STATE_DIR = ".codex-claude";
+const SESSION_WARN_DAYS = 7;
+const SESSION_WARN_CALLS = 50;
 
 function usage() {
   return `Usage:
@@ -208,9 +214,9 @@ async function commandConfig(paths) {
       builtIn: BUILT_IN_DEFAULTS.effort,
     }),
     session: state.sessionId
-      ? { sessionId: state.sessionId, createdAt: state.createdAt }
+      ? { sessionId: state.sessionId, createdAt: state.createdAt, callCount: state.callCount || 0 }
       : "none (next call starts one)",
-    configPath: paths.config,
+    stateDir: paths.dir,
   };
   process.stdout.write(`${JSON.stringify(resolved, null, 2)}\n`);
 }
@@ -370,10 +376,22 @@ async function commandAsk(paths, parsed) {
   if (model.value === "auto" && !parsed.dryRun) {
     const routed = await routeModel(parsed.prompt);
     model = { value: routed.model, source: routed.source };
+    if (effort.source === "built-in") {
+      effort = { value: ROUTED_EFFORT[routed.model] || BUILT_IN_DEFAULTS.effort, source: routed.source };
+    }
     process.stderr.write(`[claude] auto-router → ${model.value} ${effort.value}\n`);
   }
 
   const resume = Boolean(state.sessionId);
+  if (resume && !parsed.dryRun) {
+    const ageDays = state.createdAt ? (Date.now() - Date.parse(state.createdAt)) / 86400000 : 0;
+    const calls = state.callCount || 0;
+    if (ageDays > SESSION_WARN_DAYS || calls > SESSION_WARN_CALLS) {
+      process.stderr.write(
+        `[claude] heads-up: this conversation is ${Math.floor(ageDays)} day(s) old (${calls} calls) — say "new" to start fresh\n`,
+      );
+    }
+  }
   const sessionId = state.sessionId || randomUUID();
   const claudeArgs = buildClaudeArgs({
     model: model.value,
@@ -409,7 +427,9 @@ async function commandAsk(paths, parsed) {
 
   // Attribution header on STDOUT so it survives any relay: the reader always
   // knows which Claude answered, and that routing happened (issue #2).
-  process.stdout.write(`[Claude · ${model.value} · ${effort.value}]\n`);
+  process.stdout.write(
+    `[Claude · ${model.value} · ${effort.value}${parsed.allowCustomizations ? "" : " · safe-mode"}]\n`,
+  );
 
   let usedSessionId = sessionId;
   let result = await runClaudeOnce(claudeArgs, paths.cwd);
@@ -440,6 +460,11 @@ async function commandAsk(paths, parsed) {
   });
 
   if (result.exitCode !== 0) {
+    if (/unknown (option|argument)|unrecognized/i.test(result.stderr)) {
+      process.stderr.write(
+        "\n[claude] The Claude CLI rejected a flag this plugin relies on (--session-id/--resume/--effort/--safe-mode/--tools). Your Claude Code version may have changed its flags — check claude --help and update the plugin.\n",
+      );
+    }
     process.stderr.write(`\nClaude call failed. Log: ${logPath}\n`);
     process.exitCode = result.exitCode;
     return;
@@ -449,6 +474,7 @@ async function commandAsk(paths, parsed) {
     sessionId: usedSessionId,
     createdAt: usedSessionId === state.sessionId ? state.createdAt : new Date().toISOString(),
     lastModel: model.value,
+    callCount: usedSessionId === state.sessionId ? (state.callCount || 0) + 1 : 1,
   });
 }
 
@@ -496,14 +522,49 @@ function runSmoke() {
   if (failures > 0) process.exitCode = 1;
 }
 
+// State lives OUTSIDE the project (~/.codex-claude/projects/<name>-<hash>/),
+// so session ids and run logs — which contain full prompts and outputs — can
+// never be committed to a repo. CODEX_CLAUDE_HOME overrides the root.
+function resolvePaths(cwd) {
+  const home = process.env.CODEX_CLAUDE_HOME || path.join(homedir(), STATE_DIR);
+  const key = `${path.basename(cwd).replace(/[^a-zA-Z0-9_-]/g, "-")}-${createHash("sha256")
+    .update(cwd)
+    .digest("hex")
+    .slice(0, 8)}`;
+  const dir = path.join(home, "projects", key);
+  return {
+    cwd,
+    dir,
+    config: path.join(dir, "config.json"),
+    state: path.join(dir, "state.json"),
+    runs: path.join(dir, "runs"),
+  };
+}
+
+// One-time migration from the old <cwd>/.codex-claude location.
+async function migrateLegacyState(paths) {
+  const legacyDir = path.join(paths.cwd, STATE_DIR);
+  if (path.resolve(legacyDir) === path.resolve(paths.dir)) return;
+  let migrated = false;
+  for (const name of ["config.json", "state.json"]) {
+    const legacy = await loadJson(path.join(legacyDir, name));
+    if (Object.keys(legacy).length === 0) continue;
+    const target = path.join(paths.dir, name);
+    if (Object.keys(await loadJson(target)).length > 0) continue;
+    await saveJson(target, legacy);
+    migrated = true;
+  }
+  if (migrated) {
+    process.stderr.write(
+      `[claude] moved state out of the repo: ${legacyDir} → ${paths.dir} (old dir is safe to delete)\n`,
+    );
+  }
+}
+
 async function main() {
   const cwd = process.cwd();
-  const paths = {
-    cwd,
-    config: path.join(cwd, STATE_DIR, "config.json"),
-    state: path.join(cwd, STATE_DIR, "state.json"),
-    runs: path.join(cwd, STATE_DIR, "runs"),
-  };
+  const paths = resolvePaths(cwd);
+  await migrateLegacyState(paths);
   const parsed = parseInvocation(process.argv.slice(2));
 
   if (parsed.help) return void process.stdout.write(usage());
