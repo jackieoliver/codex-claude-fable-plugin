@@ -19,3 +19,6 @@ npm-debug.log*
 
 # OS artifacts
 .DS_Store
+
+# Claude-for-Codex local config/state/logs
+.codex-claude/

@@ -1,0 +1,431 @@
+#!/usr/bin/env node
+// Claude for Codex — wrapper behind the $claude skill (see SPEC.md).
+// Owns the word grammar, defaults, per-project conversation memory, and the
+// spawn of the local `claude` CLI. Zero dependencies.
+
+import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+const MODEL_ALIASES = ["fable", "opus", "sonnet", "haiku"];
+const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const MODIFIERS = new Set(["new", "repo"]);
+const SUBCOMMANDS = new Set(["models", "use", "config"]);
+const BUILT_IN_DEFAULTS = { model: "fable", effort: "xhigh" };
+const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
+const STATE_DIR = ".codex-claude";
+
+function usage() {
+  return `Usage:
+  codex-claude [model] [effort] [new] [repo] <prompt...>
+  codex-claude models                     list models/efforts, defaults marked
+  codex-claude use <model> [effort]       persist new defaults
+  codex-claude config                     show resolved config + session state
+  codex-claude -- <prompt...>             treat everything after -- as prompt
+
+Models:  ${MODEL_ALIASES.join(", ")} (or any claude-* id verbatim)
+Efforts: ${EFFORTS.join(", ")}
+Keywords: new (fresh conversation), repo (read-only repo access this call)
+
+Flags: --dry-run  --smoke  --allow-customizations  --help
+Env:   CODEX_CLAUDE_MODEL, CODEX_CLAUDE_EFFORT, CODEX_CLAUDE_ALLOW_CUSTOMIZATIONS=1
+`;
+}
+
+function isModelToken(token) {
+  const lower = token.toLowerCase();
+  return MODEL_ALIASES.includes(lower) || lower.startsWith("claude-");
+}
+
+function isEffortToken(token) {
+  return EFFORTS.includes(token.toLowerCase());
+}
+
+// The whole grammar lives here. Input is the raw word list after `$claude`.
+// Leading reserved words (model, effort, new, repo) are consumed in any order,
+// at most once per category; the first non-reserved word starts the prompt;
+// `--` ends sniffing explicitly. Subcommands are recognized as first word only.
+export function parseInvocation(rawArgv) {
+  const parsed = {
+    kind: "ask",
+    model: null,
+    effort: null,
+    fresh: false,
+    repo: false,
+    prompt: "",
+    dryRun: false,
+    help: false,
+    smoke: false,
+    allowCustomizations: process.env.CODEX_CLAUDE_ALLOW_CUSTOMIZATIONS === "1",
+    useArgs: [],
+    errors: [],
+  };
+
+  // Split off wrapper flags first; everything else is grammar words.
+  const words = [];
+  for (const arg of rawArgv) {
+    if (arg === "--dry-run") parsed.dryRun = true;
+    else if (arg === "--help" || arg === "-h") parsed.help = true;
+    else if (arg === "--smoke") parsed.smoke = true;
+    else if (arg === "--allow-customizations") parsed.allowCustomizations = true;
+    else words.push(...String(arg).split(/\s+/).filter(Boolean));
+  }
+
+  if (parsed.help || parsed.smoke) return parsed;
+
+  if (words.length > 0 && SUBCOMMANDS.has(words[0].toLowerCase())) {
+    parsed.kind = words[0].toLowerCase();
+    parsed.useArgs = words.slice(1);
+    return parsed;
+  }
+
+  let index = 0;
+  let sniffing = true;
+  while (sniffing && index < words.length) {
+    const word = words[index];
+    const lower = word.toLowerCase();
+
+    if (word === "--") {
+      index += 1;
+      break;
+    }
+    if (parsed.model === null && isModelToken(word)) {
+      parsed.model = lower;
+      index += 1;
+      continue;
+    }
+    if (parsed.effort === null && isEffortToken(word)) {
+      parsed.effort = lower;
+      index += 1;
+      continue;
+    }
+    if (MODIFIERS.has(lower) && !(lower === "new" ? parsed.fresh : parsed.repo)) {
+      if (lower === "new") parsed.fresh = true;
+      else parsed.repo = true;
+      index += 1;
+      continue;
+    }
+    sniffing = false; // first non-reserved (or repeated-category) word: prompt starts
+  }
+
+  parsed.prompt = words.slice(index).join(" ").trim();
+  return parsed;
+}
+
+async function loadJson(filePath) {
+  try {
+    return JSON.parse(await readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return {};
+    throw error;
+  }
+}
+
+async function saveJson(filePath, value) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+}
+
+function resolveSetting({ cli, env, config, builtIn }) {
+  if (cli) return { value: cli, source: "call" };
+  if (env) return { value: env, source: "env" };
+  if (config) return { value: config, source: "config" };
+  return { value: builtIn, source: "built-in" };
+}
+
+// Session per project: reuse state.sessionId via --resume, or mint a UUID via
+// --session-id so streaming needs no output parsing (SPEC §Memory).
+export function buildClaudeArgs({ model, effort, repo, sessionId, resume, allowCustomizations, prompt }) {
+  const args = resume ? ["--resume", sessionId] : ["--session-id", sessionId];
+  args.push("--model", model, "--effort", effort);
+  if (!allowCustomizations) args.push("--safe-mode");
+  if (repo) args.push("--allowedTools", ...READ_ONLY_TOOLS);
+  else args.push("--tools", "");
+  args.push("-p", prompt);
+  return args;
+}
+
+async function commandModels(paths) {
+  const config = await loadJson(paths.config);
+  const model = config.model || BUILT_IN_DEFAULTS.model;
+  const effort = config.effort || BUILT_IN_DEFAULTS.effort;
+  const lines = ["Models:"];
+  for (const alias of MODEL_ALIASES) {
+    lines.push(`  ${alias === model ? "✓" : " "} ${alias}`);
+  }
+  lines.push("  (any claude-* model id also works verbatim)", "", "Efforts:");
+  for (const level of EFFORTS) {
+    lines.push(`  ${level === effort ? "✓" : " "} ${level}`);
+  }
+  lines.push("", `Change defaults: codex-claude use <model> [effort]`);
+  process.stdout.write(`${lines.join("\n")}\n`);
+}
+
+async function commandUse(paths, useArgs) {
+  const update = {};
+  for (const word of useArgs) {
+    if (isModelToken(word)) update.model = word.toLowerCase();
+    else if (isEffortToken(word)) update.effort = word.toLowerCase();
+    else throw new Error(`Not a model or effort: ${JSON.stringify(word)}\n${usage()}`);
+  }
+  if (Object.keys(update).length === 0) {
+    throw new Error(`Nothing to set.\n${usage()}`);
+  }
+  const config = { ...(await loadJson(paths.config)), ...update };
+  await saveJson(paths.config, config);
+  process.stdout.write(`Defaults updated: ${JSON.stringify(config)} (${paths.config})\n`);
+}
+
+async function commandConfig(paths) {
+  const config = await loadJson(paths.config);
+  const state = await loadJson(paths.state);
+  const resolved = {
+    model: resolveSetting({
+      cli: null,
+      env: process.env.CODEX_CLAUDE_MODEL,
+      config: config.model,
+      builtIn: BUILT_IN_DEFAULTS.model,
+    }),
+    effort: resolveSetting({
+      cli: null,
+      env: process.env.CODEX_CLAUDE_EFFORT,
+      config: config.effort,
+      builtIn: BUILT_IN_DEFAULTS.effort,
+    }),
+    session: state.sessionId
+      ? { sessionId: state.sessionId, createdAt: state.createdAt }
+      : "none (next call starts one)",
+    configPath: paths.config,
+  };
+  process.stdout.write(`${JSON.stringify(resolved, null, 2)}\n`);
+}
+
+function looksLikeMissingSession(text) {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("no conversation found") ||
+    (lower.includes("session") && (lower.includes("not found") || lower.includes("does not exist")))
+  );
+}
+
+function runClaudeOnce(claudeArgs, cwd) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("claude", claudeArgs, {
+      cwd,
+      env: process.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.on("error", (error) =>
+      reject(error?.code === "ENOENT" ? new Error("claude CLI not found — install and authenticate Claude Code first.") : error),
+    );
+
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString("utf8");
+      stdout += text;
+      process.stdout.write(text);
+    });
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString("utf8");
+      stderr += text;
+      process.stderr.write(text);
+    });
+    child.on("close", (exitCode) => resolve({ exitCode: exitCode ?? 1, stdout, stderr }));
+  });
+}
+
+async function writeRunLog(paths, { model, effort, repo, sessionId, prompt, result }) {
+  await mkdir(paths.runs, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const logPath = path.join(paths.runs, `${stamp}.md`);
+  const log = [
+    "---",
+    `model: ${model}`,
+    `effort: ${effort}`,
+    `repo: ${repo}`,
+    `sessionId: ${sessionId}`,
+    `exitCode: ${result.exitCode}`,
+    "---",
+    "",
+    "## Prompt",
+    "",
+    "```text",
+    prompt,
+    "```",
+    "",
+    "## Stdout",
+    "",
+    result.stdout || "(empty)",
+    "",
+    "## Stderr",
+    "",
+    "```text",
+    result.stderr || "",
+    "```",
+    "",
+  ].join("\n");
+  await writeFile(logPath, log, "utf8");
+  return logPath;
+}
+
+async function commandAsk(paths, parsed) {
+  if (parsed.fresh) {
+    await rm(paths.state, { force: true });
+    if (!parsed.prompt) {
+      process.stdout.write("Started a fresh conversation.\n");
+      return;
+    }
+  }
+  if (!parsed.prompt) throw new Error(`Missing prompt.\n${usage()}`);
+
+  const config = await loadJson(paths.config);
+  const state = parsed.fresh ? {} : await loadJson(paths.state);
+
+  const model = resolveSetting({
+    cli: parsed.model,
+    env: process.env.CODEX_CLAUDE_MODEL,
+    config: config.model,
+    builtIn: BUILT_IN_DEFAULTS.model,
+  });
+  const effort = resolveSetting({
+    cli: parsed.effort,
+    env: process.env.CODEX_CLAUDE_EFFORT,
+    config: config.effort,
+    builtIn: BUILT_IN_DEFAULTS.effort,
+  });
+
+  const resume = Boolean(state.sessionId);
+  const sessionId = state.sessionId || randomUUID();
+  const claudeArgs = buildClaudeArgs({
+    model: model.value,
+    effort: effort.value,
+    repo: parsed.repo,
+    sessionId,
+    resume,
+    allowCustomizations: parsed.allowCustomizations,
+    prompt: parsed.prompt,
+  });
+
+  if (parsed.dryRun) {
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          command: "claude",
+          args: claudeArgs,
+          model,
+          effort,
+          repo: parsed.repo,
+          session: resume ? "resume" : `new (${sessionId})`,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    return;
+  }
+
+  let usedSessionId = sessionId;
+  let result = await runClaudeOnce(claudeArgs, paths.cwd);
+
+  // Self-healing (SPEC §Memory): saved session was purged → fresh id, retry once.
+  if (result.exitCode !== 0 && resume && looksLikeMissingSession(result.stdout + result.stderr)) {
+    usedSessionId = randomUUID();
+    process.stderr.write("\n[codex-claude] Saved session missing — starting a fresh conversation.\n");
+    const retryArgs = buildClaudeArgs({
+      model: model.value,
+      effort: effort.value,
+      repo: parsed.repo,
+      sessionId: usedSessionId,
+      resume: false,
+      allowCustomizations: parsed.allowCustomizations,
+      prompt: parsed.prompt,
+    });
+    result = await runClaudeOnce(retryArgs, paths.cwd);
+  }
+
+  const logPath = await writeRunLog(paths, {
+    model: model.value,
+    effort: effort.value,
+    repo: parsed.repo,
+    sessionId: usedSessionId,
+    prompt: parsed.prompt,
+    result,
+  });
+
+  if (result.exitCode !== 0) {
+    process.stderr.write(`\nClaude call failed. Log: ${logPath}\n`);
+    process.exitCode = result.exitCode;
+    return;
+  }
+
+  await saveJson(paths.state, {
+    sessionId: usedSessionId,
+    createdAt: usedSessionId === state.sessionId ? state.createdAt : new Date().toISOString(),
+    lastModel: model.value,
+  });
+}
+
+const SMOKE_CASES = [
+  { argv: ["explain", "this"], expect: { kind: "ask", model: null, effort: null, prompt: "explain this" } },
+  { argv: ["opus", "fix", "this", "bug"], expect: { model: "opus", prompt: "fix this bug" } },
+  { argv: ["sonnet", "low", "summarize"], expect: { model: "sonnet", effort: "low", prompt: "summarize" } },
+  { argv: ["low", "sonnet", "summarize"], expect: { model: "sonnet", effort: "low", prompt: "summarize" } },
+  { argv: ["repo", "review", "my", "code"], expect: { repo: true, prompt: "review my code" } },
+  { argv: ["opus", "repo", "review"], expect: { model: "opus", repo: true, prompt: "review" } },
+  { argv: ["new", "opus", "start", "over"], expect: { fresh: true, model: "opus", prompt: "start over" } },
+  { argv: ["--", "opus", "is", "great"], expect: { model: null, prompt: "opus is great" } },
+  { argv: ["models"], expect: { kind: "models" } },
+  { argv: ["use", "opus", "high"], expect: { kind: "use", useArgs: ["opus", "high"] } },
+  { argv: ["config"], expect: { kind: "config" } },
+  { argv: ["claude-opus-4-8", "hi"], expect: { model: "claude-opus-4-8", prompt: "hi" } },
+  { argv: ["opus", "haiku", "vs", "opus"], expect: { model: "opus", prompt: "haiku vs opus" } },
+  { argv: ["max", "think", "hard"], expect: { effort: "max", prompt: "think hard" } },
+  { argv: ["opus high review my plan"], expect: { model: "opus", effort: "high", prompt: "review my plan" } },
+];
+
+function runSmoke() {
+  let failures = 0;
+  for (const { argv, expect } of SMOKE_CASES) {
+    const parsed = parseInvocation(argv);
+    const diffs = Object.entries(expect).filter(
+      ([key, value]) => JSON.stringify(parsed[key]) !== JSON.stringify(value),
+    );
+    if (diffs.length === 0) {
+      process.stdout.write(`PASS  ${JSON.stringify(argv.join(" "))}\n`);
+    } else {
+      failures += 1;
+      for (const [key, value] of diffs) {
+        process.stdout.write(
+          `FAIL  ${JSON.stringify(argv.join(" "))} — ${key}: expected ${JSON.stringify(value)}, got ${JSON.stringify(parsed[key])}\n`,
+        );
+      }
+    }
+  }
+  process.stdout.write(`\n${SMOKE_CASES.length - failures}/${SMOKE_CASES.length} grammar cases pass\n`);
+  if (failures > 0) process.exitCode = 1;
+}
+
+async function main() {
+  const cwd = process.cwd();
+  const paths = {
+    cwd,
+    config: path.join(cwd, STATE_DIR, "config.json"),
+    state: path.join(cwd, STATE_DIR, "state.json"),
+    runs: path.join(cwd, STATE_DIR, "runs"),
+  };
+  const parsed = parseInvocation(process.argv.slice(2));
+
+  if (parsed.help) return void process.stdout.write(usage());
+  if (parsed.smoke) return void runSmoke();
+  if (parsed.kind === "models") return commandModels(paths);
+  if (parsed.kind === "use") return commandUse(paths, parsed.useArgs);
+  if (parsed.kind === "config") return commandConfig(paths);
+  return commandAsk(paths, parsed);
+}
+
+main().catch((error) => {
+  process.stderr.write(`${error?.message || String(error)}\n`);
+  process.exitCode = 1;
+});
