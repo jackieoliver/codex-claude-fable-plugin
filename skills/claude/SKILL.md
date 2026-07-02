@@ -1,11 +1,11 @@
 ---
 name: claude
-description: Call a Claude model (fable, opus, sonnet, haiku) from Codex chat with a word-based model picker, effort selection, and per-project conversation memory. Use when the user invokes $claude, names a Claude model, or asks for Claude's take inside Codex.
+description: Call a Claude model (fable, opus, sonnet, haiku) from Codex chat with a word-based model picker, effort selection, and per-project conversation memory. Use when the user invokes /claude or $claude, names a Claude model, or asks for Claude's take inside Codex.
 ---
 
 # Claude for Codex
 
-Use this skill when the user invokes `$claude`, names a Claude model, or wants a
+Use this skill when the user invokes `/claude` or `$claude`, names a Claude model, or wants a
 Claude answer inside Codex chat.
 
 ## Behavior
@@ -31,19 +31,22 @@ node scripts/claude-call.mjs "<everything the user wrote after $claude>"
 ## Grammar (owned by the wrapper — for your awareness only)
 
 ```text
-$claude <prompt>                     default model + effort
-$claude opus <prompt>                leading word picks the model
-$claude sonnet low <prompt>          model + effort, any order
-$claude repo <prompt>                Claude may read the repo (read-only) this call
-$claude new [model] <prompt>         start a fresh conversation
-$claude models                       list models/efforts, defaults marked
-$claude use opus high                persist new defaults
-$claude config                       show resolved config + session state
-$claude -- <prompt>                  everything after -- is prompt (escape hatch)
+/claude <prompt>                     default model + effort
+/claude opus <prompt>                leading word picks the model
+/claude sonnet low <prompt>          model + effort, any order
+/claude repo <prompt>                Claude may read the repo (read-only) this call
+/claude new [model] <prompt>         start a fresh conversation
+/claude models                       list models/efforts, defaults marked
+/claude use opus high                persist new defaults
+/claude config                       show resolved config + session state
+/claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
 Models: `fable`, `opus`, `sonnet`, `haiku`, or any `claude-*` id verbatim.
 Efforts: `low`, `medium`, `high`, `xhigh` (default), `max`.
+
+`$claude ...` is the explicit skill-invocation fallback if a Codex surface does
+not expose skill slash commands.
 
 ## Memory
 

@@ -1,6 +1,6 @@
 {
   "name": "codex-claude-fable-plugin",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Claude for Codex: call Claude models from Codex chat with a word-based model picker, effort selection, and per-project conversation memory.",
   "type": "module",
   "license": "MIT",

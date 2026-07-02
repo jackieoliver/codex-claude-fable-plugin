@@ -1,11 +1,11 @@
 ---
 name: fable
-description: Shortcut for $claude fable — route a Codex chat turn to Claude Fable. Use when the user invokes $fable or asks Fable directly.
+description: Shortcut for /claude fable — route a Codex chat turn to Claude Fable. Use when the user invokes $fable or asks Fable directly.
 ---
 
 # Fable (alias)
 
-`$fable <anything>` is exactly `$claude fable <anything>`.
+`$fable <anything>` is exactly `/claude fable <anything>`.
 
 Call the wrapper with `fable` prepended to the user's words, verbatim:
 

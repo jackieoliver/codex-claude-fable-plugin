@@ -5,7 +5,7 @@ conversation going across calls, let Claude read your repo when you say so.
 Uses your existing Claude Code CLI login — **no API key**.
 
 ```text
-$claude opus high review my plan
+/claude opus high review my plan
 ```
 
 ## Requirements
@@ -24,24 +24,26 @@ codex plugin marketplace add "$(pwd)"
 ```
 
 Open Codex, run `/plugins`, install **Claude for Codex**, and start a new thread.
+Type `/claude` to invoke the skill from the slash command menu.
 
 ## Usage
 
 ```text
-$claude <prompt>                     default model + effort
-$claude opus <prompt>                leading word picks the model
-$claude sonnet low <prompt>          model + effort, any order
-$claude repo <prompt>                Claude may read the repo (read-only) this call
-$claude new [model] <prompt>         start a fresh conversation
-$claude models                       list models/efforts, defaults marked
-$claude use opus high                persist new defaults
-$claude config                       show resolved config + session state
-$claude -- <prompt>                  everything after -- is prompt (escape hatch)
+/claude <prompt>                     default model + effort
+/claude opus <prompt>                leading word picks the model
+/claude sonnet low <prompt>          model + effort, any order
+/claude repo <prompt>                Claude may read the repo (read-only) this call
+/claude new [model] <prompt>         start a fresh conversation
+/claude models                       list models/efforts, defaults marked
+/claude use opus high                persist new defaults
+/claude config                       show resolved config + session state
+/claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
 - **Models:** `fable`, `opus`, `sonnet`, `haiku` — or any `claude-*` model id verbatim.
 - **Efforts:** `low`, `medium`, `high`, `xhigh` (default), `max`.
-- `$fable <prompt>` still works as a shortcut for `$claude fable <prompt>`.
+- `$claude ...` and `$fable ...` remain explicit skill-invocation fallbacks.
+- `$fable <prompt>` is a shortcut for `/claude fable <prompt>`.
 
 ## Memory
 
@@ -56,7 +58,7 @@ By default Claude answers in pure chat mode and cannot see your files. Add the
 call — never writes, never shell:
 
 ```text
-$claude opus repo review the error handling in scripts/claude-call.mjs
+/claude opus repo review the error handling in scripts/claude-call.mjs
 ```
 
 ## Isolation
@@ -69,7 +71,7 @@ MCP servers are not loaded. Opt out per call with `--allow-customizations` or
 
 Resolution order for model and effort:
 
-1. Words in the call (`$claude opus high ...`)
+1. Words in the call (`/claude opus high ...`)
 2. `CODEX_CLAUDE_MODEL` / `CODEX_CLAUDE_EFFORT` environment variables
 3. `.codex-claude/config.json` (written by `$claude use ...`)
 4. Built-ins: `fable` / `xhigh`

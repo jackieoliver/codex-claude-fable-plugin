@@ -4,7 +4,7 @@ Version 1.0 (agreed design, pre-implementation). Repo: `jackieoliver/codex-claud
 
 ## Product statement
 
-One skill inside Codex chat that routes any turn to a Claude model of your choosing, with
+One `/claude` skill inside Codex chat that routes any turn to a Claude model of your choosing, with
 persistent per-project conversation memory — plus an optional **native mode** that registers
 Claude as a real Codex model provider. Dead simple: one word picks the model, zero config
 required to start, no API key needed for the skill path.
@@ -13,8 +13,8 @@ required to start, no API key needed for the skill path.
 
 | # | Decision | Choice |
 |---|----------|--------|
-| 1 | Architecture | **$claude skill IS the product.** Native provider mode is an experimental side quest (docs/native-mode.md), outside the main README path |
-| 2 | Naming | Skill `$claude`, bin `codex-claude`, display name "Claude for Codex"; `$fable` kept as alias for `$claude fable` |
+| 1 | Architecture | **`/claude` skill IS the product.** Native provider mode is an experimental side quest (docs/native-mode.md), outside the main README path |
+| 2 | Naming | Skill `/claude`, explicit fallback `$claude`, bin `codex-claude`, display name "Claude for Codex"; `$fable` kept as alias for `/claude fable` |
 | 3 | Model picker | Leading-word grammar, no flags needed |
 | 4 | Memory | Yes — one rolling conversation per project; `new` resets |
 | 5 | Repo access | Pure chat by default; opt-in `repo` keyword grants read-only tools for that call |
@@ -24,8 +24,8 @@ required to start, no API key needed for the skill path.
 
 | Piece | Path | Role |
 |---|---|---|
-| Primary skill | `skills/claude/SKILL.md` | `$claude` entry point; teaches Codex the grammar |
-| Alias skill | `skills/fable/SKILL.md` | `$fable <prompt>` ≡ `$claude fable <prompt>` |
+| Primary skill | `skills/claude/SKILL.md` | `/claude` entry point; teaches Codex the grammar |
+| Alias skill | `skills/fable/SKILL.md` | `$fable <prompt>` means `/claude fable <prompt>` |
 | Wrapper | `scripts/claude-call.mjs` (bin: `codex-claude`) | Grammar parsing, config/state, spawns `claude` CLI |
 | Config | `.codex-claude/config.json` (gitignored) | `{ "model": "...", "effort": "..." }` |
 | State | `.codex-claude/state.json` (gitignored) | `{ "sessionId": "<uuid>", "createdAt": "...", "lastModel": "..." }` |
@@ -39,20 +39,20 @@ The old `skills/fable-config/`, `--mode` flag, `effort=`/`effort:` alternate syn
 ## Grammar
 
 ```text
-$claude <prompt>                     default model + effort
-$claude opus <prompt>                leading word = model
-$claude sonnet low <prompt>          model + effort, any order
-$claude repo <prompt>                this call may read the repo
-$claude opus repo review my diff     keywords compose
-$claude new [model] <prompt>         reset conversation, then answer
-$claude models                       show models/efforts, current defaults marked
-$claude use opus high                persist new defaults
-$claude config                       show resolved config + session state
+/claude <prompt>                     default model + effort
+/claude opus <prompt>                leading word = model
+/claude sonnet low <prompt>          model + effort, any order
+/claude repo <prompt>                this call may read the repo
+/claude opus repo review my diff     keywords compose
+/claude new [model] <prompt>         reset conversation, then answer
+/claude models                       show models/efforts, current defaults marked
+/claude use opus high                persist new defaults
+/claude config                       show resolved config + session state
 ```
 
 **Parsing rule:** consume leading tokens while they match a reserved word, in any order;
 the first non-reserved token starts the prompt. `--` stops sniffing (for prompts that
-genuinely begin with a reserved word: `$claude -- opus is a great model, right?`).
+genuinely begin with a reserved word: `/claude -- opus is a great model, right?`).
 
 **Reserved words:**
 - Models: `fable`, `opus`, `sonnet`, `haiku` — plus verbatim pass-through of any token
@@ -126,7 +126,7 @@ compat-endpoint fidelity with Codex's agentic tool loop is unproven until tested
 ## Milestones
 
 1. **M1** — wrapper rewrite: grammar, config/state, memory, repo keyword *(v1)*
-2. **M2** — skills (`$claude`, `$fable` alias), plugin manifest, README rewrite, remove
+2. **M2** — skills (`/claude`, `$fable` alias), plugin manifest, README rewrite, remove
    dead pieces, validation gates, push *(v1)*
 3. **M3** — experimental, post-v1: native mode `apply`/`remove` (documented in
    `docs/native-mode.md`; not part of the main README path)
