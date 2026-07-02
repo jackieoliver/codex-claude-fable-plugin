@@ -8,11 +8,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const MODEL_ALIASES = ["fable", "opus", "sonnet", "haiku"];
+const MODEL_ALIASES = ["auto", "fable", "opus", "sonnet", "haiku"];
+const ROUTABLE_MODELS = ["haiku", "sonnet", "opus", "fable"];
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODIFIERS = new Set(["new", "repo"]);
 const SUBCOMMANDS = new Set(["models", "use", "config"]);
-const BUILT_IN_DEFAULTS = { model: "fable", effort: "xhigh" };
+const BUILT_IN_DEFAULTS = { model: "auto", effort: "xhigh" };
+const ROUTER_FALLBACK = { model: "fable", effort: "xhigh" };
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 const STATE_DIR = ".codex-claude";
 
@@ -25,6 +27,8 @@ function usage() {
   codex-claude -- <prompt...>             treat everything after -- as prompt
 
 Models:  ${MODEL_ALIASES.join(", ")} (or any claude-* id verbatim)
+Default is auto: a fast router reads the prompt and picks model + effort
+(fallback ${ROUTER_FALLBACK.model} ${ROUTER_FALLBACK.effort}). Name a model to override; "use <model>" pins one.
 Efforts: ${EFFORTS.join(", ")}
 Keywords: new (fresh conversation), repo (read-only repo access this call)
 
@@ -152,7 +156,8 @@ async function commandModels(paths) {
   const effort = config.effort || BUILT_IN_DEFAULTS.effort;
   const lines = ["Models:"];
   for (const alias of MODEL_ALIASES) {
-    lines.push(`  ${alias === model ? "✓" : " "} ${alias}`);
+    const note = alias === "auto" ? " — router picks per prompt" : "";
+    lines.push(`  ${alias === model ? "✓" : " "} ${alias}${note}`);
   }
   lines.push("  (any claude-* model id also works verbatim)", "", "Efforts:");
   for (const level of EFFORTS) {
@@ -199,6 +204,58 @@ async function commandConfig(paths) {
     configPath: paths.config,
   };
   process.stdout.write(`${JSON.stringify(resolved, null, 2)}\n`);
+}
+
+// Auto-router: a fast, stateless haiku call reads the prompt and picks the
+// model + effort. Never touches the conversation session. Any failure falls
+// back to ROUTER_FALLBACK rather than blocking the user's question.
+function routerInstruction(prompt) {
+  return [
+    "Pick which Claude model should answer the user's prompt below.",
+    "Reply with EXACTLY two words on one line: MODEL EFFORT",
+    "MODEL choices: haiku = trivial lookups, quick facts, tiny snippets;",
+    "sonnet = everyday coding and writing questions, summaries;",
+    "opus = complex debugging, careful analysis, code review;",
+    "fable = hardest reasoning, architecture, deep open-ended thinking.",
+    `EFFORT choices: ${EFFORTS.join(", ")} — match the difficulty.`,
+    "",
+    `User prompt: ${prompt}`,
+  ].join("\n");
+}
+
+function routeModel(prompt) {
+  const args = [
+    "--model", "haiku",
+    "--effort", "low",
+    "--safe-mode",
+    "--no-session-persistence",
+    "--tools", "",
+    "-p", routerInstruction(prompt),
+  ];
+  return new Promise((resolve) => {
+    const child = spawn("claude", args, { env: process.env, stdio: ["ignore", "pipe", "ignore"] });
+    let stdout = "";
+    const finish = (routed) => resolve(routed);
+    const timer = setTimeout(() => {
+      child.kill();
+      finish({ ...ROUTER_FALLBACK, source: "router-timeout" });
+    }, 60000);
+    child.on("error", () => {
+      clearTimeout(timer);
+      finish({ ...ROUTER_FALLBACK, source: "router-error" });
+    });
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk.toString("utf8");
+    });
+    child.on("close", (exitCode) => {
+      clearTimeout(timer);
+      const tokens = stdout.toLowerCase().split(/\s+/);
+      const model = tokens.find((t) => ROUTABLE_MODELS.includes(t));
+      const effort = tokens.find((t) => EFFORTS.includes(t));
+      if (exitCode === 0 && model) finish({ model, effort: effort || ROUTER_FALLBACK.effort, source: "router" });
+      else finish({ ...ROUTER_FALLBACK, source: "router-fallback" });
+    });
+  });
 }
 
 function looksLikeMissingSession(text) {
@@ -283,18 +340,26 @@ async function commandAsk(paths, parsed) {
   const config = await loadJson(paths.config);
   const state = parsed.fresh ? {} : await loadJson(paths.state);
 
-  const model = resolveSetting({
+  let model = resolveSetting({
     cli: parsed.model,
     env: process.env.CODEX_CLAUDE_MODEL,
     config: config.model,
     builtIn: BUILT_IN_DEFAULTS.model,
   });
-  const effort = resolveSetting({
+  let effort = resolveSetting({
     cli: parsed.effort,
     env: process.env.CODEX_CLAUDE_EFFORT,
     config: config.effort,
     builtIn: BUILT_IN_DEFAULTS.effort,
   });
+
+  if (model.value === "auto" && !parsed.dryRun) {
+    const routed = await routeModel(parsed.prompt);
+    model = { value: routed.model, source: routed.source };
+    // Router effort only fills the gap — an effort the user chose always wins.
+    if (effort.source === "built-in") effort = { value: routed.effort, source: routed.source };
+    process.stderr.write(`[claude] auto-router → ${model.value} ${effort.value}\n`);
+  }
 
   const resume = Boolean(state.sessionId);
   const sessionId = state.sessionId || randomUUID();
@@ -318,6 +383,10 @@ async function commandAsk(paths, parsed) {
           effort,
           repo: parsed.repo,
           session: resume ? "resume" : `new (${sessionId})`,
+          note:
+            model.value === "auto"
+              ? `router picks model+effort at run time (fallback ${ROUTER_FALLBACK.model} ${ROUTER_FALLBACK.effort})`
+              : undefined,
         },
         null,
         2,
@@ -382,6 +451,8 @@ const SMOKE_CASES = [
   { argv: ["claude-opus-4-8", "hi"], expect: { model: "claude-opus-4-8", prompt: "hi" } },
   { argv: ["opus", "haiku", "vs", "opus"], expect: { model: "opus", prompt: "haiku vs opus" } },
   { argv: ["max", "think", "hard"], expect: { effort: "max", prompt: "think hard" } },
+  { argv: ["auto", "quick", "question"], expect: { model: "auto", prompt: "quick question" } },
+  { argv: ["use", "auto"], expect: { kind: "use", useArgs: ["auto"] } },
   { argv: ["opus high review my plan"], expect: { model: "opus", effort: "high", prompt: "review my plan" } },
 ];
 

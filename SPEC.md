@@ -138,3 +138,15 @@ compat-endpoint fidelity with Codex's agentic tool loop is unproven until tested
 - No multi-model fan-out / parallel queries
 - No API key handling anywhere in the skill path
 - No repo rename (stays `codex-claude-fable-plugin`; display name changes only)
+
+## Amendments (v0.3)
+
+- **One command.** `/claude` is the sole entry point (skill name `claude`); the
+  `$fable` alias skill was removed. `$claude` remains the invocation fallback on
+  surfaces without skill slash commands.
+- **Auto-router is the default.** Built-in default model changed `fable` →
+  `auto`: with no model word, a stateless haiku low call classifies the prompt
+  and picks model + effort (echoed on stderr; fallback `fable xhigh` on any
+  router failure; 60s router timeout). A user-named effort beats the router's;
+  a user-named model skips routing. `use <model>` pins and disables routing;
+  `use auto` re-enables it. The router call never touches conversation state.

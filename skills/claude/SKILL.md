@@ -31,19 +31,27 @@ node scripts/claude-call.mjs "<everything the user wrote after $claude>"
 ## Grammar (owned by the wrapper — for your awareness only)
 
 ```text
-/claude <prompt>                     default model + effort
-/claude opus <prompt>                leading word picks the model
+/claude <prompt>                     auto: router picks model + effort from the prompt
+/claude opus <prompt>                leading word picks the model (no routing)
 /claude sonnet low <prompt>          model + effort, any order
 /claude repo <prompt>                Claude may read the repo (read-only) this call
 /claude new [model] <prompt>         start a fresh conversation
 /claude models                       list models/efforts, defaults marked
-/claude use opus high                persist new defaults
+/claude use opus high                pin defaults (use auto to re-enable routing)
 /claude config                       show resolved config + session state
 /claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
-Models: `fable`, `opus`, `sonnet`, `haiku`, or any `claude-*` id verbatim.
-Efforts: `low`, `medium`, `high`, `xhigh` (default), `max`.
+Models: `auto` (default), `fable`, `opus`, `sonnet`, `haiku`, or any `claude-*` id verbatim.
+Efforts: `low`, `medium`, `high`, `xhigh`, `max`.
+
+## Routing
+
+With no model word, a fast haiku router reads the prompt and picks the model
+and effort (trivial → haiku … hardest → fable; falls back to fable xhigh if
+routing fails). The chosen route is echoed on stderr as
+`[claude] auto-router → <model> <effort>`. Naming a model skips the router
+entirely; `use <model>` pins one persistently.
 
 `$claude ...` is the explicit skill-invocation fallback if a Codex surface does
 not expose skill slash commands.

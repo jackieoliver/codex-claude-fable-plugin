@@ -1,11 +1,13 @@
 # Claude for Codex
 
-Call Claude models from Codex chat. Pick a model with a word, keep a
-conversation going across calls, let Claude read your repo when you say so.
+Call Claude models from Codex chat with one command. Say nothing extra and a
+router picks the right model for the prompt; name a model to override. Keeps a
+conversation going across calls, and reads your repo only when you say so.
 Uses your existing Claude Code CLI login — **no API key**.
 
 ```text
-/claude opus high review my plan
+/claude why would a mutex deadlock here?        ← router picks the model
+/claude opus high review my plan                ← or you do
 ```
 
 ## Requirements
@@ -29,25 +31,35 @@ Type `/claude` to invoke the skill from the slash command menu.
 ## Usage
 
 ```text
-/claude <prompt>                     default model + effort
-/claude opus <prompt>                leading word picks the model
+/claude <prompt>                     auto: router picks model + effort from the prompt
+/claude opus <prompt>                leading word picks the model (no routing)
 /claude sonnet low <prompt>          model + effort, any order
 /claude repo <prompt>                Claude may read the repo (read-only) this call
 /claude new [model] <prompt>         start a fresh conversation
 /claude models                       list models/efforts, defaults marked
-/claude use opus high                persist new defaults
+/claude use opus high                pin defaults (use auto to re-enable routing)
 /claude config                       show resolved config + session state
 /claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
-- **Models:** `fable`, `opus`, `sonnet`, `haiku` — or any `claude-*` model id verbatim.
-- **Efforts:** `low`, `medium`, `high`, `xhigh` (default), `max`.
-- `$claude ...` and `$fable ...` remain explicit skill-invocation fallbacks.
-- `$fable <prompt>` is a shortcut for `/claude fable <prompt>`.
+- **Models:** `auto` (default), `fable`, `opus`, `sonnet`, `haiku` — or any
+  `claude-*` model id verbatim.
+- **Efforts:** `low`, `medium`, `high`, `xhigh`, `max`.
+- `$claude ...` remains the explicit skill-invocation fallback on surfaces
+  where Codex doesn't expose skill slash commands.
+
+## Auto-routing
+
+With no model word, a fast haiku call reads your prompt and picks the model and
+effort — trivial lookups land on `haiku low`, the hardest reasoning lands on
+`fable xhigh`, everything else in between. The decision is echoed as
+`[claude] auto-router → <model> <effort>` so it's never a mystery. If routing
+fails, the call falls back to `fable xhigh`. An effort you name always beats
+the router's; naming a model skips the router entirely.
 
 ## Memory
 
-Conversations persist per project: consecutive `$claude` calls continue one
+Conversations persist per project: consecutive `/claude` calls continue one
 Claude session (model switches keep the thread). Say `new` to start over.
 Session state lives in `.codex-claude/state.json` (gitignored); no ids to manage.
 
@@ -73,8 +85,8 @@ Resolution order for model and effort:
 
 1. Words in the call (`/claude opus high ...`)
 2. `CODEX_CLAUDE_MODEL` / `CODEX_CLAUDE_EFFORT` environment variables
-3. `.codex-claude/config.json` (written by `$claude use ...`)
-4. Built-ins: `fable` / `xhigh`
+3. `.codex-claude/config.json` (written by `/claude use ...`)
+4. Built-ins: `auto` (router) / `xhigh`
 
 ## Troubleshooting
 
