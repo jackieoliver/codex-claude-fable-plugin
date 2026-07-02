@@ -1,36 +1,23 @@
 ---
 name: fable
-description: Call Claude Code Fable from Codex chat with configurable effort. Use when the user invokes $fable, asks to call Fable, or wants Claude Code/Fable to answer inside Codex.
+description: Shortcut for $claude fable — route a Codex chat turn to Claude Fable. Use when the user invokes $fable or asks Fable directly.
 ---
 
-# Claude Fable
+# Fable (alias)
 
-Use this skill when the user invokes `$fable`, asks to call Fable, or wants Claude Code/Fable to answer inside Codex chat.
+`$fable <anything>` is exactly `$claude fable <anything>`.
 
-## Behavior
-
-- Do not answer the task yourself before calling Fable.
-- Extract an optional effort override from the user's request.
-- Default effort is `xhigh`.
-- Valid efforts are `low`, `medium`, `high`, `xhigh`, and `max`.
-- Accepted override forms include `effort=high`, `effort:high`, `--effort high`, and `--effort=high`.
-- Remove the effort override from the prompt before sending it to Fable.
-- Call the local wrapper. Prefer the binary when available:
+Call the wrapper with `fable` prepended to the user's words, verbatim:
 
 ```bash
-codex-fable --mode chat --effort <effort> -- "<user prompt>"
+codex-claude "fable <everything the user wrote after $fable>"
 ```
 
-- In this plugin development checkout, this equivalent command also works:
+In this plugin development checkout, this equivalent command also works:
 
 ```bash
-node scripts/fable-call.mjs --mode chat --effort <effort> -- "<user prompt>"
+node scripts/claude-call.mjs "fable <everything the user wrote after $fable>"
 ```
 
-- Relay Fable's stdout as the primary answer in the Codex chat.
-- If the command fails, report the failure briefly and include the Claude CLI stderr if it is useful.
-
-## Notes
-
-- Prefer concise relaying. Avoid re-summarizing unless the user asks.
-- For long or code-editing work, recommend `$fable-code` once that skill is enabled.
+Relay Claude's stdout as the primary answer. For the full grammar (effort words,
+`repo`, `new`, memory), see `skills/claude/SKILL.md`.

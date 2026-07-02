@@ -1,7 +1,7 @@
 {
   "name": "codex-claude-fable-plugin",
-  "version": "0.1.0",
-  "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
+  "version": "0.2.0",
+  "description": "Call Claude models from Codex chat with a word-based model picker, effort selection, and per-project conversation memory.",
   "author": {
     "name": "pizzacorruption"
   },
@@ -10,13 +10,14 @@
     "codex",
     "claude",
     "fable",
-    "claude-code"
+    "claude-code",
+    "model-picker"
   ],
   "skills": "./skills/",
   "interface": {
-    "displayName": "Claude Fable",
-    "shortDescription": "Call Claude Code Fable from Codex chat.",
-    "longDescription": "Claude Fable lets Codex act as a lightweight chat shell and route selected turns to the local Claude Code CLI with configurable effort.",
+    "displayName": "Claude for Codex",
+    "shortDescription": "Call Claude models from Codex chat.",
+    "longDescription": "Claude for Codex routes chat turns to the local Claude Code CLI: pick a model with a word ($claude opus ...), set effort the same way, keep a per-project conversation going across calls, and opt into read-only repo access with the repo keyword. Uses your existing Claude CLI login — no API key.",
     "developerName": "pizzacorruption",
     "category": "Developer Tools",
     "capabilities": [
@@ -25,9 +26,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "$fable effort=high brainstorm this architecture",
-      "$fable --effort max review this plan",
-      "$fable-config show"
+      "$claude opus high review this plan",
+      "$claude repo what does this codebase do?",
+      "$claude models"
     ],
     "brandColor": "#111111",
     "screenshots": []

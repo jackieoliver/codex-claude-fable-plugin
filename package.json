@@ -1,7 +1,7 @@
 {
   "name": "codex-claude-fable-plugin",
-  "version": "0.1.0",
-  "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
+  "version": "0.2.0",
+  "description": "Claude for Codex: call Claude models from Codex chat with a word-based model picker, effort selection, and per-project conversation memory.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -13,10 +13,9 @@
     "url": "https://github.com/pizzacorruption/codex-claude-fable-plugin/issues"
   },
   "bin": {
-    "codex-fable": "./scripts/fable-call.mjs"
+    "codex-claude": "./scripts/claude-call.mjs"
   },
   "scripts": {
-    "smoke": "node scripts/fable-call.mjs --dry-run --effort high -- \"hello\"",
-    "config": "node scripts/fable-call.mjs --show-config"
+    "smoke": "node scripts/claude-call.mjs --smoke"
   }
 }

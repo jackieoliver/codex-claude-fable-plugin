@@ -13,8 +13,8 @@
       },
       "category": "Developer Tools",
       "interface": {
-        "displayName": "Claude Fable",
-        "shortDescription": "Call Claude Code Fable from Codex chat."
+        "displayName": "Claude for Codex",
+        "shortDescription": "Call Claude models from Codex chat."
       }
     }
   ]
