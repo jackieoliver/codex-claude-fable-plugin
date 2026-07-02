@@ -1,6 +1,6 @@
 {
   "name": "codex-claude-fable-plugin",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Claude for Codex: one /claude command that auto-routes each prompt to the right Claude model, with effort control and per-project conversation memory.",
   "type": "module",
   "license": "MIT",
