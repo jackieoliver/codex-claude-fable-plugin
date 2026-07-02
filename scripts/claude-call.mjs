@@ -10,7 +10,7 @@ import { homedir } from "node:os";
 import path from "node:path";
 
 const MODEL_ALIASES = ["auto", "fable", "opus", "sonnet", "haiku"];
-const ROUTABLE_MODELS = ["haiku", "sonnet", "opus", "fable"];
+const ROUTABLE_MODELS = ["haiku", "sonnet", "opus", "fable", "fable-lite"];
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODIFIERS = new Set(["new", "repo"]);
 const SUBCOMMANDS = new Set(["models", "use", "config", "on", "start", "stop", "off", "codex"]);
@@ -18,7 +18,7 @@ const BUILT_IN_DEFAULTS = { model: "auto", effort: "xhigh" };
 const ROUTER_FALLBACK = { model: "fable", effort: "xhigh" };
 // When the router picked the model AND the user named no effort anywhere,
 // the routed model brings a matching effort (a named effort always wins).
-const ROUTED_EFFORT = { haiku: "low", sonnet: "high", opus: "xhigh", fable: "xhigh" };
+const ROUTED_EFFORT = { haiku: "low", sonnet: "high", opus: "xhigh", fable: "xhigh", "fable-lite": "low" };
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
 const STATE_DIR = ".codex-claude";
 const SESSION_WARN_DAYS = 7;
@@ -230,12 +230,15 @@ function routerInstruction(prompt) {
     "Reply with EXACTLY one word on one line: MODEL",
     "Default to fable. Only choose a smaller model when the prompt is obviously suited to it.",
     "If there is any ambiguity, uncertainty, hidden complexity, or open-ended reasoning, choose fable.",
-    "If the prompt asks about the assistant itself (its model, identity, version, capabilities,",
-    "or configuration), always choose fable — the answer depends on which model answers.",
     "MODEL choices: haiku = trivial lookups, quick facts, tiny snippets;",
     "sonnet = clearly routine coding and writing questions, summaries;",
     "opus = bounded complex debugging, careful analysis, code review;",
-    "fable = default, hardest reasoning, architecture, deep open-ended thinking.",
+    "fable = default, hardest reasoning, architecture, deep open-ended thinking;",
+    "fable-lite = trivial questions about the assistant itself.",
+    "ABSOLUTE RULE: if the prompt asks about the assistant itself (its model, identity,",
+    "version, capabilities, or configuration), you MUST reply fable-lite (if trivial) or",
+    "fable (if complex) — NEVER haiku, sonnet, or opus, because the answer depends on",
+    "which model answers.",
     "",
     `User prompt: ${prompt}`,
   ].join("\n");
@@ -267,7 +270,7 @@ function routeModel(prompt) {
     });
     child.on("close", (exitCode) => {
       clearTimeout(timer);
-      const tokens = stdout.toLowerCase().split(/\s+/);
+      const tokens = stdout.toLowerCase().split(/\s+/).map((t) => t.replace(/[^a-z-]/g, ""));
       const model = tokens.find((t) => ROUTABLE_MODELS.includes(t));
       if (exitCode === 0 && model) finish({ model, source: "router" });
       else finish({ ...ROUTER_FALLBACK, source: "router-fallback" });
@@ -375,7 +378,8 @@ async function commandAsk(paths, parsed) {
 
   if (model.value === "auto" && !parsed.dryRun) {
     const routed = await routeModel(parsed.prompt);
-    model = { value: routed.model, source: routed.source };
+    // fable-lite = fable answering trivia (e.g. identity checks): right model, small effort.
+    model = { value: routed.model === "fable-lite" ? "fable" : routed.model, source: routed.source };
     if (effort.source === "built-in") {
       effort = { value: ROUTED_EFFORT[routed.model] || BUILT_IN_DEFAULTS.effort, source: routed.source };
     }
