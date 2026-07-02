@@ -1,6 +1,6 @@
 # SPEC — Claude for Codex
 
-Version 1.0 (agreed design, pre-implementation). Repo: `pizzacorruption/codex-claude-fable-plugin`.
+Version 1.0 (agreed design, pre-implementation). Repo: `jackieoliver/codex-claude-fable-plugin`.
 
 ## Product statement
 

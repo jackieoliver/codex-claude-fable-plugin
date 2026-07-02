@@ -17,7 +17,7 @@ $claude opus high review my plan
 ## Install
 
 ```bash
-git clone https://github.com/pizzacorruption/codex-claude-fable-plugin.git
+git clone https://github.com/jackieoliver/codex-claude-fable-plugin.git
 cd codex-claude-fable-plugin
 npm link                                  # provides the codex-claude binary
 codex plugin marketplace add "$(pwd)"
