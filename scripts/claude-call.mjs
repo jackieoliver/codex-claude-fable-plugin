@@ -12,7 +12,7 @@ const MODEL_ALIASES = ["auto", "fable", "opus", "sonnet", "haiku"];
 const ROUTABLE_MODELS = ["haiku", "sonnet", "opus", "fable"];
 const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 const MODIFIERS = new Set(["new", "repo"]);
-const SUBCOMMANDS = new Set(["models", "use", "config"]);
+const SUBCOMMANDS = new Set(["models", "use", "config", "on", "start", "stop", "off", "codex"]);
 const BUILT_IN_DEFAULTS = { model: "auto", effort: "xhigh" };
 const ROUTER_FALLBACK = { model: "fable", effort: "xhigh" };
 const READ_ONLY_TOOLS = ["Read", "Grep", "Glob"];
@@ -24,11 +24,13 @@ function usage() {
   codex-claude models                     list models/efforts, defaults marked
   codex-claude use <model> [effort]       persist new defaults
   codex-claude config                     show resolved config + session state
+  codex-claude on                         mark Claude mode active for this project
+  codex-claude stop                       mark Claude mode stopped for this project
   codex-claude -- <prompt...>             treat everything after -- as prompt
 
 Models:  ${MODEL_ALIASES.join(", ")} (or any claude-* id verbatim)
-Default is auto: a fast router reads the prompt and picks model + effort
-(fallback ${ROUTER_FALLBACK.model} ${ROUTER_FALLBACK.effort}). Name a model to override; "use <model>" pins one.
+Default is auto: a conservative router keeps ${ROUTER_FALLBACK.model} unless the prompt
+is clearly asking for a smaller model. Effort defaults to ${BUILT_IN_DEFAULTS.effort} unless named.
 Efforts: ${EFFORTS.join(", ")}
 Keywords: new (fresh conversation), repo (read-only repo access this call)
 
@@ -182,10 +184,17 @@ async function commandUse(paths, useArgs) {
   process.stdout.write(`Defaults updated: ${JSON.stringify(config)} (${paths.config})\n`);
 }
 
+async function commandMode(paths, enabled) {
+  const config = { ...(await loadJson(paths.config)), stickyMode: enabled };
+  await saveJson(paths.config, config);
+  process.stdout.write(`${enabled ? "Claude mode enabled" : "Claude mode stopped"} (${paths.config})\n`);
+}
+
 async function commandConfig(paths) {
   const config = await loadJson(paths.config);
   const state = await loadJson(paths.state);
   const resolved = {
+    stickyMode: config.stickyMode !== false ? "on" : "stopped",
     model: resolveSetting({
       cli: null,
       env: process.env.CODEX_CLAUDE_MODEL,
@@ -207,17 +216,18 @@ async function commandConfig(paths) {
 }
 
 // Auto-router: a fast, stateless haiku call reads the prompt and picks the
-// model + effort. Never touches the conversation session. Any failure falls
-// back to ROUTER_FALLBACK rather than blocking the user's question.
+// model. Never touches the conversation session. Any failure falls back to
+// ROUTER_FALLBACK rather than blocking the user's question.
 function routerInstruction(prompt) {
   return [
     "Pick which Claude model should answer the user's prompt below.",
-    "Reply with EXACTLY two words on one line: MODEL EFFORT",
+    "Reply with EXACTLY one word on one line: MODEL",
+    "Default to fable. Only choose a smaller model when the prompt is obviously suited to it.",
+    "If there is any ambiguity, uncertainty, hidden complexity, or open-ended reasoning, choose fable.",
     "MODEL choices: haiku = trivial lookups, quick facts, tiny snippets;",
-    "sonnet = everyday coding and writing questions, summaries;",
-    "opus = complex debugging, careful analysis, code review;",
-    "fable = hardest reasoning, architecture, deep open-ended thinking.",
-    `EFFORT choices: ${EFFORTS.join(", ")} — match the difficulty.`,
+    "sonnet = clearly routine coding and writing questions, summaries;",
+    "opus = bounded complex debugging, careful analysis, code review;",
+    "fable = default, hardest reasoning, architecture, deep open-ended thinking.",
     "",
     `User prompt: ${prompt}`,
   ].join("\n");
@@ -251,8 +261,7 @@ function routeModel(prompt) {
       clearTimeout(timer);
       const tokens = stdout.toLowerCase().split(/\s+/);
       const model = tokens.find((t) => ROUTABLE_MODELS.includes(t));
-      const effort = tokens.find((t) => EFFORTS.includes(t));
-      if (exitCode === 0 && model) finish({ model, effort: effort || ROUTER_FALLBACK.effort, source: "router" });
+      if (exitCode === 0 && model) finish({ model, source: "router" });
       else finish({ ...ROUTER_FALLBACK, source: "router-fallback" });
     });
   });
@@ -339,6 +348,9 @@ async function commandAsk(paths, parsed) {
 
   const config = await loadJson(paths.config);
   const state = parsed.fresh ? {} : await loadJson(paths.state);
+  if (!parsed.dryRun && config.stickyMode !== true) {
+    await saveJson(paths.config, { ...config, stickyMode: true });
+  }
 
   let model = resolveSetting({
     cli: parsed.model,
@@ -356,8 +368,6 @@ async function commandAsk(paths, parsed) {
   if (model.value === "auto" && !parsed.dryRun) {
     const routed = await routeModel(parsed.prompt);
     model = { value: routed.model, source: routed.source };
-    // Router effort only fills the gap — an effort the user chose always wins.
-    if (effort.source === "built-in") effort = { value: routed.effort, source: routed.source };
     process.stderr.write(`[claude] auto-router → ${model.value} ${effort.value}\n`);
   }
 
@@ -385,7 +395,7 @@ async function commandAsk(paths, parsed) {
           session: resume ? "resume" : `new (${sessionId})`,
           note:
             model.value === "auto"
-              ? `router picks model+effort at run time (fallback ${ROUTER_FALLBACK.model} ${ROUTER_FALLBACK.effort})`
+              ? `router keeps ${ROUTER_FALLBACK.model} unless a smaller model is obvious; effort resolves separately`
               : undefined,
         },
         null,
@@ -448,6 +458,8 @@ const SMOKE_CASES = [
   { argv: ["models"], expect: { kind: "models" } },
   { argv: ["use", "opus", "high"], expect: { kind: "use", useArgs: ["opus", "high"] } },
   { argv: ["config"], expect: { kind: "config" } },
+  { argv: ["stop"], expect: { kind: "stop" } },
+  { argv: ["on"], expect: { kind: "on" } },
   { argv: ["claude-opus-4-8", "hi"], expect: { model: "claude-opus-4-8", prompt: "hi" } },
   { argv: ["opus", "haiku", "vs", "opus"], expect: { model: "opus", prompt: "haiku vs opus" } },
   { argv: ["max", "think", "hard"], expect: { effort: "max", prompt: "think hard" } },
@@ -493,6 +505,8 @@ async function main() {
   if (parsed.kind === "models") return commandModels(paths);
   if (parsed.kind === "use") return commandUse(paths, parsed.useArgs);
   if (parsed.kind === "config") return commandConfig(paths);
+  if (parsed.kind === "on" || parsed.kind === "start") return commandMode(paths, true);
+  if (parsed.kind === "stop" || parsed.kind === "off" || parsed.kind === "codex") return commandMode(paths, false);
   return commandAsk(paths, parsed);
 }
 

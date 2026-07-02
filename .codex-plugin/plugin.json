@@ -1,6 +1,6 @@
 {
   "name": "codex-claude-fable-plugin",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "One /claude command for Codex: auto-routes each prompt to the right Claude model, with per-project conversation memory.",
   "author": {
     "name": "jackieoliver"
@@ -17,7 +17,7 @@
   "interface": {
     "displayName": "Claude for Codex",
     "shortDescription": "Call Claude models from Codex chat.",
-    "longDescription": "Claude for Codex routes chat turns to the local Claude Code CLI. /claude with just a prompt auto-picks the model and effort via a fast router; name a model (fable, opus, sonnet, haiku) to override. Conversations persist per project, and the repo keyword grants read-only file access for a call. Uses your existing Claude CLI login — no API key.",
+    "longDescription": "Claude for Codex routes chat turns to the local Claude Code CLI. /claude enters sticky Claude mode until you say to stop. With just a prompt it uses a conservative router: fable by default, smaller models only when clearly suited to the prompt. Effort resolves from your call, config, or the xhigh default. Conversations persist per project, and the repo keyword grants read-only file access for a call. Uses your existing Claude CLI login — no API key.",
     "developerName": "jackieoliver",
     "category": "Developer Tools",
     "capabilities": [
@@ -28,6 +28,7 @@
     "defaultPrompt": [
       "/claude what does this error mean?",
       "/claude opus high review this plan",
+      "/claude stop",
       "/claude models"
     ],
     "brandColor": "#111111",

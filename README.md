@@ -1,9 +1,11 @@
 # Claude for Codex
 
-Call Claude models from Codex chat with one command. Say nothing extra and a
-router picks the right model for the prompt; name a model to override. Keeps a
-conversation going across calls, and reads your repo only when you say so.
-Uses your existing Claude Code CLI login — **no API key**.
+Call Claude models from Codex chat with one command. `/claude` enters Claude
+mode: Codex should keep routing your turns to Claude until you say to stop. Say
+nothing extra and a conservative router keeps Fable unless a smaller model is
+obviously right; name a model to override. Keeps a conversation going across
+calls, and reads your repo only when you say so. Uses your existing Claude Code
+CLI login — **no API key**.
 
 ```text
 /claude why would a mutex deadlock here?        ← router picks the model
@@ -31,7 +33,7 @@ Type `/claude` to invoke the skill from the slash command menu.
 ## Usage
 
 ```text
-/claude <prompt>                     auto: router picks model + effort from the prompt
+/claude <prompt>                     auto: conservative router; fable unless obviously smaller
 /claude opus <prompt>                leading word picks the model (no routing)
 /claude sonnet low <prompt>          model + effort, any order
 /claude repo <prompt>                Claude may read the repo (read-only) this call
@@ -39,6 +41,8 @@ Type `/claude` to invoke the skill from the slash command menu.
 /claude models                       list models/efforts, defaults marked
 /claude use opus high                pin defaults (use auto to re-enable routing)
 /claude config                       show resolved config + session state
+/claude on                           mark Claude mode active
+/claude stop                         stop Claude mode; return future turns to Codex
 /claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
@@ -48,20 +52,33 @@ Type `/claude` to invoke the skill from the slash command menu.
 - `$claude ...` remains the explicit skill-invocation fallback on surfaces
   where Codex doesn't expose skill slash commands.
 
+## Claude mode
+
+`/claude` is intended to be sticky in a Codex thread: after you invoke it once,
+Codex should keep sending later turns to Claude until you say to stop, switch
+back to Codex, or run `/claude stop`. The wrapper records that intent in
+`.codex-claude/config.json` as `stickyMode`; whether future plain messages are
+captured automatically depends on the Codex surface honoring the skill's
+conversation instruction.
+
 ## Auto-routing
 
-With no model word, a fast haiku call reads your prompt and picks the model and
-effort — trivial lookups land on `haiku low`, the hardest reasoning lands on
-`fable xhigh`, everything else in between. The decision is echoed as
-`[claude] auto-router → <model> <effort>` so it's never a mystery. If routing
-fails, the call falls back to `fable xhigh`. An effort you name always beats
-the router's; naming a model skips the router entirely.
+With no model word, a fast haiku call reads your prompt, keeps `fable` as the
+default, and chooses a smaller model only when that is obvious from the prompt.
+Trivial lookups may land on `haiku`, clearly routine work may land on `sonnet`,
+and bounded careful analysis may land on `opus`; ambiguous, open-ended,
+architectural, or hard reasoning stays on `fable`. Effort resolves separately
+from your call, environment, saved config, or the built-in `xhigh` default. The
+decision is echoed as `[claude] auto-router → <model> <effort>` so it's never a
+mystery. If routing fails, the call falls back to `fable xhigh`. Naming a model
+skips the router entirely.
 
 ## Memory
 
-Conversations persist per project: consecutive `/claude` calls continue one
+Conversations persist per project: consecutive Claude-mode calls continue one
 Claude session (model switches keep the thread). Say `new` to start over.
-Session state lives in `.codex-claude/state.json` (gitignored); no ids to manage.
+Session state lives in `.codex-claude/state.json` (gitignored); no ids to
+manage.
 
 ## Repo access
 

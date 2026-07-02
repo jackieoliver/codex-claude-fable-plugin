@@ -48,6 +48,8 @@ The old `skills/fable-config/`, `--mode` flag, `effort=`/`effort:` alternate syn
 /claude models                       show models/efforts, current defaults marked
 /claude use opus high                persist new defaults
 /claude config                       show resolved config + session state
+/claude on                           mark Claude mode active
+/claude stop                         stop Claude mode
 ```
 
 **Parsing rule:** consume leading tokens while they match a reserved word, in any order;
@@ -59,7 +61,8 @@ genuinely begin with a reserved word: `/claude -- opus is a great model, right?`
   starting with `claude-` (future-proof)
 - Efforts: `low`, `medium`, `high`, `xhigh`, `max`
 - Modifiers: `new`, `repo`
-- Subcommands (first token only): `models`, `use`, `config`
+- Subcommands (first token only): `models`, `use`, `config`, `on`, `start`,
+  `stop`, `off`, `codex`
 
 **Resolution order** (model and effort each): per-call word → `CODEX_CLAUDE_MODEL` /
 `CODEX_CLAUDE_EFFORT` env → `.codex-claude/config.json` → built-in (`fable` / `xhigh`).
@@ -77,6 +80,17 @@ genuinely begin with a reserved word: `/claude -- opus is a great model, right?`
   - Self-healing: if `--resume` fails (session purged, exit ≠ 0 with a resume error),
     the wrapper automatically starts a fresh session with a new UUID and retries once.
 - `--no-session-persistence` is removed (memory requires persistence).
+
+## Claude mode
+
+- Invoking `/claude` turns sticky mode on by writing `stickyMode: true` to
+  `.codex-claude/config.json`.
+- `/claude stop`, `/claude off`, and `/claude codex` write
+  `stickyMode: false`.
+- Skill behavior treats sticky mode as conversational: after `/claude`, route
+  later turns through Claude until the user explicitly stops. Actual capture of
+  plain future messages depends on the Codex surface honoring the skill
+  instruction.
 
 ## Claude invocation
 
@@ -146,7 +160,13 @@ compat-endpoint fidelity with Codex's agentic tool loop is unproven until tested
   surfaces without skill slash commands.
 - **Auto-router is the default.** Built-in default model changed `fable` →
   `auto`: with no model word, a stateless haiku low call classifies the prompt
-  and picks model + effort (echoed on stderr; fallback `fable xhigh` on any
-  router failure; 60s router timeout). A user-named effort beats the router's;
-  a user-named model skips routing. `use <model>` pins and disables routing;
-  `use auto` re-enables it. The router call never touches conversation state.
+  and conservatively picks the model: `fable` is the default, and smaller
+  models are selected only when obviously suited to the prompt (echoed on
+  stderr with the resolved effort; fallback `fable xhigh` on any router
+  failure; 60s router timeout). Effort resolves separately through the normal
+  per-call, env, config, then built-in `xhigh` order. A user-named model skips
+  routing. `use <model>` pins and disables routing; `use auto` re-enables it.
+  The router call never touches conversation state.
+- **Claude mode is sticky by intent.** `/claude` turns on project-local
+  `stickyMode`; `/claude stop`, `/claude off`, or `/claude codex` turns it off.
+  The skill instructs Codex to keep using Claude between those points.
