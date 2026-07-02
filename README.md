@@ -1,166 +1,105 @@
-# Codex Claude Fable Plugin
+# Claude for Codex
 
-Use Codex as the chat shell while delegating selected turns to Claude Code Fable.
+Call Claude models from Codex chat. Pick a model with a word, keep a
+conversation going across calls, let Claude read your repo when you say so.
+Uses your existing Claude Code CLI login — **no API key**.
+
+```text
+$claude opus high review my plan
+```
 
 ## Requirements
 
-- Codex CLI or Codex app with plugin support.
-- Claude Code CLI installed and authenticated.
-- Node.js 18 or newer.
+- Codex CLI or Codex app with plugin support
+- [Claude Code CLI](https://claude.com/claude-code) installed and authenticated (`claude --version`)
+- Node.js 18+
 
-Verify the Claude CLI is available:
-
-```bash
-claude --version
-claude --help
-```
-
-## Install For Local Codex Use
-
-Clone the public repo:
+## Install
 
 ```bash
 git clone https://github.com/pizzacorruption/codex-claude-fable-plugin.git
 cd codex-claude-fable-plugin
-```
-
-Link the local wrapper binary:
-
-```bash
-npm link
-codex-fable --help
-```
-
-Add this repo as a local Codex plugin marketplace:
-
-```bash
+npm link                                  # provides the codex-claude binary
 codex plugin marketplace add "$(pwd)"
 ```
 
-Then open Codex's plugin browser:
+Open Codex, run `/plugins`, install **Claude for Codex**, and start a new thread.
+
+## Usage
 
 ```text
-/plugins
+$claude <prompt>                     default model + effort
+$claude opus <prompt>                leading word picks the model
+$claude sonnet low <prompt>          model + effort, any order
+$claude repo <prompt>                Claude may read the repo (read-only) this call
+$claude new [model] <prompt>         start a fresh conversation
+$claude models                       list models/efforts, defaults marked
+$claude use opus high                persist new defaults
+$claude config                       show resolved config + session state
+$claude -- <prompt>                  everything after -- is prompt (escape hatch)
 ```
 
-Install **Claude Fable**, start a new Codex thread, and invoke the skill:
+- **Models:** `fable`, `opus`, `sonnet`, `haiku` — or any `claude-*` model id verbatim.
+- **Efforts:** `low`, `medium`, `high`, `xhigh` (default), `max`.
+- `$fable <prompt>` still works as a shortcut for `$claude fable <prompt>`.
+
+## Memory
+
+Conversations persist per project: consecutive `$claude` calls continue one
+Claude session (model switches keep the thread). Say `new` to start over.
+Session state lives in `.codex-claude/state.json` (gitignored); no ids to manage.
+
+## Repo access
+
+By default Claude answers in pure chat mode and cannot see your files. Add the
+`repo` keyword to grant **read-only** tools (`Read`, `Grep`, `Glob`) for that
+call — never writes, never shell:
 
 ```text
-$fable say hi
+$claude opus repo review the error handling in scripts/claude-call.mjs
 ```
 
-Codex plugins load through marketplaces. This repo includes
-`.agents/plugins/marketplace.json`, which points Codex at the plugin manifest in
-this checkout.
+## Isolation
 
-## Effort
+Calls run with Claude's `--safe-mode`, so your local Claude plugins, hooks, and
+MCP servers are not loaded. Opt out per call with `--allow-customizations` or
+`CODEX_CLAUDE_ALLOW_CUSTOMIZATIONS=1`.
 
-Fable defaults to `xhigh`.
+## Defaults and overrides
 
-Per-call override examples:
+Resolution order for model and effort:
 
-```text
-$fable effort=high explain this bug
-$fable --effort max review the payout code
-$fable effort:low summarize this file
-```
+1. Words in the call (`$claude opus high ...`)
+2. `CODEX_CLAUDE_MODEL` / `CODEX_CLAUDE_EFFORT` environment variables
+3. `.codex-claude/config.json` (written by `$claude use ...`)
+4. Built-ins: `fable` / `xhigh`
 
-Project default override:
+## Troubleshooting
+
+- Every call writes a log to `.codex-claude/runs/` with the prompt, output, and
+  exit code.
+- Dry-run any call to see the exact `claude` command without running it:
 
 ```bash
-node scripts/fable-call.mjs --set-default-effort high
+codex-claude --dry-run "opus high review my plan"
 ```
 
-Environment override:
+- Parser self-test: `npm run smoke`
 
-```bash
-FABLE_EFFORT=high node scripts/fable-call.mjs -- "question"
-```
+## Output note
 
-Priority order is:
+The wrapper streams Claude stdout to the calling process; Codex relays the
+final visible answer in chat. Native token streaming inside the Codex assistant
+bubble is not guaranteed.
 
-1. Per-call effort
-2. `FABLE_EFFORT`
-3. `.fable/config.json`
-4. Built-in default `xhigh`
+## Experimental: native provider mode
 
-Valid efforts: `low`, `medium`, `high`, `xhigh`, `max`.
+There is a separate, experimental path that registers Claude as a real Codex
+model provider (Codex's own `/model` picker, API-key billing). It is **not**
+part of this plugin's supported surface — see [docs/native-mode.md](docs/native-mode.md).
 
-The wrapper sends the selected effort to Claude Code with:
+## Public safety
 
-```bash
-claude --model fable --effort <effort> --no-session-persistence --safe-mode -p "<prompt>"
-```
-
-For chat mode, the wrapper also passes `--tools ""` so Claude answers without
-using tools.
-
-By default, the wrapper uses Claude `--safe-mode` to avoid loading local Claude
-plugins, hooks, MCP servers, and project customizations. To opt into your local
-Claude customizations for a call:
-
-```bash
-codex-fable --allow-customizations -- "question"
-```
-
-## Local Smoke Test
-
-This does not call Claude:
-
-```bash
-node scripts/fable-call.mjs --dry-run --effort high -- "hello"
-```
-
-This calls the local Claude CLI:
-
-```bash
-node scripts/fable-call.mjs --effort xhigh -- "Brainstorm the plugin architecture."
-```
-
-After local linking, the same wrapper is available as:
-
-```bash
-npm link
-codex-fable --effort high -- "hello"
-```
-
-## Usage In Codex
-
-Ask Fable to answer directly:
-
-```text
-$fable explain this error
-```
-
-Choose effort per call:
-
-```text
-$fable effort=low summarize this file
-$fable effort=high debug this failure
-$fable --effort max pressure-test this architecture
-```
-
-Inspect the current default:
-
-```text
-$fable-config show
-```
-
-Change the project default:
-
-```text
-$fable-config set default effort high
-```
-
-Under the hood, `$fable-config` calls:
-
-```bash
-codex-fable --show-config
-codex-fable --set-default-effort high
-```
-
-## Public Safety
-
-This repository should not contain local Claude state, Codex state, logs,
-transcripts, environment files, or API keys. `.gitignore` excludes `.claude/`,
-`.codex/`, `.fable/`, `.env*`, logs, local overrides, and dependencies.
+This repository contains no API keys, tokens, or local state. `.gitignore`
+excludes `.codex-claude/`, `.claude/`, `.codex/`, `.fable/`, `.env*`, logs, and
+local overrides.
