@@ -4,6 +4,14 @@
   "description": "Use Codex as the chat shell while delegating selected turns to Claude Code Fable.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pizzacorruption/codex-claude-fable-plugin.git"
+  },
+  "homepage": "https://github.com/pizzacorruption/codex-claude-fable-plugin#readme",
+  "bugs": {
+    "url": "https://github.com/pizzacorruption/codex-claude-fable-plugin/issues"
+  },
   "bin": {
     "codex-fable": "./scripts/fable-call.mjs"
   },
@@ -12,4 +20,3 @@
     "config": "node scripts/fable-call.mjs --show-config"
   }
 }
-

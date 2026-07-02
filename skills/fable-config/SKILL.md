@@ -1,3 +1,8 @@
+---
+name: fable-config
+description: Inspect or change the default Claude Fable effort used by the codex-fable wrapper.
+---
+
 # Claude Fable Config
 
 Use this skill when the user wants to inspect or change Claude Fable defaults.

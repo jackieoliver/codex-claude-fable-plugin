@@ -1,0 +1,21 @@
+{
+  "name": "codex-claude-fable-plugin",
+  "plugins": [
+    {
+      "name": "codex-claude-fable-plugin",
+      "source": {
+        "source": "local",
+        "path": "./"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools",
+      "interface": {
+        "displayName": "Claude Fable",
+        "shortDescription": "Call Claude Code Fable from Codex chat."
+      }
+    }
+  ]
+}

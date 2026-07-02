@@ -1,3 +1,8 @@
+---
+name: fable
+description: Call Claude Code Fable from Codex chat with configurable effort. Use when the user invokes $fable, asks to call Fable, or wants Claude Code/Fable to answer inside Codex.
+---
+
 # Claude Fable
 
 Use this skill when the user invokes `$fable`, asks to call Fable, or wants Claude Code/Fable to answer inside Codex chat.

@@ -22,6 +22,10 @@ function usage() {
 
 Efforts: low, medium, high, xhigh, max
 Default: ${BUILT_IN_DEFAULT_EFFORT}
+
+By default, Claude runs with --safe-mode so local Claude plugins, hooks, MCP
+servers, and project customizations are not loaded. Pass --allow-customizations
+or set FABLE_ALLOW_CUSTOMIZATIONS=1 to omit --safe-mode.
 `;
 }
 
@@ -34,6 +38,7 @@ function parseArgs(argv) {
     promptParts: [],
     setDefaultEffort: null,
     showConfig: false,
+    allowCustomizations: process.env.FABLE_ALLOW_CUSTOMIZATIONS === "1",
   };
 
   let promptMode = false;
@@ -62,6 +67,11 @@ function parseArgs(argv) {
 
     if (arg === "--show-config") {
       parsed.showConfig = true;
+      continue;
+    }
+
+    if (arg === "--allow-customizations") {
+      parsed.allowCustomizations = true;
       continue;
     }
 
@@ -251,11 +261,20 @@ async function main() {
   const mode = args.mode || "chat";
 
   if (args.dryRun) {
+    const dryRunArgs = ["--model", model, "--effort", resolvedEffort.effort, "--no-session-persistence"];
+    if (!args.allowCustomizations) {
+      dryRunArgs.push("--safe-mode");
+    }
+    if (mode === "chat") {
+      dryRunArgs.push("--tools", "");
+    }
+    dryRunArgs.push("-p", prompt);
+
     process.stdout.write(
       `${JSON.stringify(
         {
           command: "claude",
-          args: ["--model", model, "--effort", resolvedEffort.effort, "--no-session-persistence", "-p", prompt],
+          args: dryRunArgs,
           effortSource: resolvedEffort.source,
           mode,
           prompt,
@@ -268,6 +287,10 @@ async function main() {
   }
 
   const claudeArgs = ["--model", model, "--effort", resolvedEffort.effort, "--no-session-persistence"];
+
+  if (!args.allowCustomizations) {
+    claudeArgs.push("--safe-mode");
+  }
 
   if (mode === "chat") {
     claudeArgs.push("--tools", "");
@@ -324,4 +347,3 @@ main().catch((error) => {
   process.stderr.write(`${error?.stack || error?.message || String(error)}\n`);
   process.exitCode = 1;
 });
-
