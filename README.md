@@ -12,6 +12,27 @@ CLI login — **no API key**.
 /claude opus high review my plan                ← or you do
 ```
 
+## How it works
+
+```mermaid
+flowchart LR
+    A["/claude prompt in Codex chat"] --> B["claude skill relays words verbatim"]
+    B --> C["codex-claude parses model, effort, new, repo"]
+    C --> D{Model is auto?}
+    D -->|auto| E["Haiku router picks model + effort"]
+    D -->|named| F
+    E --> F["claude -p in safe mode"]
+    S[("Per-project state in ~/.codex-claude")] -->|session id| F
+    F -->|session id + run log| S
+    F --> G["Answer streamed to stdout"]
+    G --> H[Codex relays answer in chat]
+```
+
+Codex never answers the question itself: the skill hands your words to the
+`codex-claude` wrapper, which picks the model and effort and runs your local
+`claude` CLI. The session id is saved per project outside your repo, so the
+next call resumes the same Claude conversation.
+
 ## Requirements
 
 - Codex CLI or Codex app with plugin support
